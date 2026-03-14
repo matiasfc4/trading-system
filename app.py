@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import statsmodels.api as sm
-from datetime import datetime  # Nueva librería para el tiempo
+from datetime import datetime
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Alpha Quant v11.7 - Full Restoration", layout="wide")
@@ -28,7 +28,6 @@ st.markdown("""
 def get_final_data(ticker_id, t):
     p_map = {"1h": "30d", "4h": "60d", "1d": "120d"}
     df = yf.download(ticker_id, period=p_map[t], interval=t, progress=False)
-    
     if df.empty: return None
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     
@@ -38,13 +37,11 @@ def get_final_data(ticker_id, t):
     df['Std'] = df['Close'].rolling(W).std()
     df['Z_Price'] = (df['Close'] - df['SMA']) / (df['Std'] + 1e-10)
     
-    # JDetector (Flujo Institucional)
     df['Vol_Proxy'] = (df['High'] - df['Low']) * 100000
     df['RMF'] = df['Close'] * df['Vol_Proxy']
     diff_val = df['Ret'].rolling(W).sum() - df['RMF'].pct_change().rolling(W).sum()
     df['Z_Diff'] = (diff_val - diff_val.rolling(W).mean()) / (diff_val.rolling(W).std() + 1e-10)
     
-    # Estructura y Absorción
     df['Skew'] = df['Ret'].rolling(30).skew()
     df['Spread'] = (df['High'] - df['Low'])
     df['V_Eff'] = df['Spread'] / (df['Volume'].rolling(5).mean() + 1e-10)
@@ -58,14 +55,12 @@ def get_final_data(ticker_id, t):
         except: r2_s.append(0)
     df['R2'] = r2_s
 
-    # Camarilla
     daily = yf.download(ticker_id, period="5d", interval="1d", progress=False)
     if isinstance(daily.columns, pd.MultiIndex): daily.columns = daily.columns.get_level_values(0)
     H, L, C = daily['High'].iloc[-2], daily['Low'].iloc[-2], daily['Close'].iloc[-2]
     r_val = H - L
     df['H4'], df['H3'] = C + r_val * (1.1/2), C + r_val * (1.1/4)
     df['L3'], df['L4'] = C - r_val * (1.1/4), C - r_val * (1.1/2)
-    
     return df
 
 def get_dynamic_diagnosis(z_d, z_p, skew, r2):
@@ -73,14 +68,11 @@ def get_dynamic_diagnosis(z_d, z_p, skew, r2):
     if z_d < -1.0: diag.append({"Dato": "Z-Diff (Flujo)", "Estado": "🟢 COMPRA", "Significado": "Entrada de dinero institucional"})
     elif z_d > 1.0: diag.append({"Dato": "Z-Diff (Flujo)", "Estado": "🔴 VENTA", "Significado": "Salida de dinero / Distribución"})
     else: diag.append({"Dato": "Z-Diff (Flujo)", "Estado": "⚪ Neutral", "Significado": "Sin presión clara"})
-    
     if abs(z_p) > 2: diag.append({"Dato": "Z-Price (Nivel)", "Estado": "⚠️ EXTREMO", "Significado": "Precio sobreextendido. Reversión probable."})
     else: diag.append({"Dato": "Z-Price (Nivel)", "Estado": "⚓ Estable", "Significado": "Zona de Fair Value"})
-    
     if skew > 0.2: diag.append({"Dato": "Skewness", "Estado": "🚀 Alcista", "Significado": "Sesgo de rebote rápido"})
     elif skew < -0.2: diag.append({"Dato": "Skewness", "Estado": "📉 Bajista", "Significado": "Riesgo de caídas bruscas"})
     else: diag.append({"Dato": "Skewness", "Estado": "⚖️ Simétrico", "Significado": "Equilibrio de riesgo"})
-    
     if r2 > 0.15: diag.append({"Dato": "R2 (Calidad)", "Estado": "💎 ALTA", "Significado": "Movimiento institucional confirmado"})
     else: diag.append({"Dato": "R2 (Calidad)", "Estado": "💨 RUIDO", "Significado": "Cuidado con trampas de bajo volumen"})
     return pd.DataFrame(diag)
@@ -100,7 +92,6 @@ data = get_final_data(assets[cat][nombre], temp)
 
 if data is not None:
     row = data.iloc[-1]
-    # Añadida Tab 7 para el Historial Temporal
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "🎯 Sniper Ejecución", "🕵️ Diagnóstico", "🧬 Historial Flujo", "🔗 Absorción Pro", "🏰 Camarilla", "🧮 RISK MGR", "📅 Historial Temporal"
     ])
@@ -118,8 +109,17 @@ if data is not None:
             color = "#00ff00" if row['Z_Diff'] < -1.0 else "#ff4b4b"
             direc = "LONG (COMPRA)" if row['Z_Diff'] < -1.0 else "SHORT (VENTA)"
             
-            # Guardar en historial si es nueva detección
-            nueva_alerta = {"Fecha/Hora": ahora, "Activo": nombre, "Dirección": direc, "Precio": f"{row['Close']:.4f}", "Probabilidad": f"{prob:.1f}%"}
+            # GUARDAR EN HISTORIAL (Incluyendo temporalidad para filtrar después)
+            nueva_alerta = {
+                "Fecha/Hora": ahora, 
+                "Activo": nombre, 
+                "TF": temp, 
+                "Dirección": direc, 
+                "Precio": f"{row['Close']:.4f}", 
+                "Probabilidad": f"{prob:.1f}%"
+            }
+            
+            # Verificar si ya existe esa señal para evitar spam al refrescar
             if not st.session_state.alert_history or st.session_state.alert_history[0]['Fecha/Hora'] != ahora:
                 st.session_state.alert_history.insert(0, nueva_alerta)
 
@@ -185,13 +185,22 @@ if data is not None:
         res3.write(f"*Consejo ECN:* Usar {lotes_final} lotes.")
 
     with tab7:
-        st.subheader("📅 Historial de Detección en Sesión")
+        st.subheader(f"📅 Historial Filtrado: {nombre} ({temp})")
         if st.session_state.alert_history:
-            st.table(pd.DataFrame(st.session_state.alert_history))
-            if st.button("Limpiar Historial"):
+            # FILTRO: Solo mostrar lo que coincida con el Activo y Temporalidad actual
+            df_h = pd.DataFrame(st.session_state.alert_history)
+            df_filtrado = df_h[(df_h['Activo'] == nombre) & (df_h['TF'] == temp)]
+            
+            if not df_filtrado.empty:
+                st.table(df_filtrado)
+            else:
+                st.info(f"No hay señales registradas para {nombre} en {temp} durante esta sesión.")
+            
+            st.divider()
+            if st.button("Limpiar TODO el Historial"):
                 st.session_state.alert_history = []
                 st.rerun()
-        else: st.info("Esperando detecciones...")
-
+        else:
+            st.info("Esperando detecciones generales...")
 else:
     st.error("Error al conectar con la API.")
