@@ -5,9 +5,14 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import statsmodels.api as sm
+from datetime import datetime  # Nueva librería para el tiempo
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Alpha Quant v11.7 - Full Restoration", layout="wide")
+
+# Inicializar el historial de alertas en la sesión si no existe
+if 'alert_history' not in st.session_state:
+    st.session_state.alert_history = []
 
 st.markdown("""
     <style>
@@ -23,11 +28,9 @@ st.markdown("""
 def get_final_data(ticker_id, t):
     p_map = {"1h": "30d", "4h": "60d", "1d": "120d"}
     df = yf.download(ticker_id, period=p_map[t], interval=t, progress=False)
-    dxy = yf.download("DX-Y.NYB", period=p_map[t], interval=t, progress=False)
     
     if df.empty: return None
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    if isinstance(dxy.columns, pd.MultiIndex): dxy.columns = dxy.columns.get_level_values(0)
     
     W = 14
     df['Ret'] = df['Close'].pct_change()
@@ -82,32 +85,11 @@ def get_dynamic_diagnosis(z_d, z_p, skew, r2):
     else: diag.append({"Dato": "R2 (Calidad)", "Estado": "💨 RUIDO", "Significado": "Cuidado con trampas de bajo volumen"})
     return pd.DataFrame(diag)
 
-# --- LISTA DE ACTIVOS ACTUALIZADA (24/5 CONTINUOS) ---
 assets = {
-    "Índices (24/5 Continuos)": {
-        "Nasdaq 100 E-Mini": "NQ=F",      # Futuro continuo
-        "S&P 500 E-Mini": "ES=F",        # Futuro continuo
-        "Dow Jones Mini": "YM=F",       # Futuro continuo
-        "DAX 40 (GER)": "FDAX.EX",       # Futuro continuo Europa
-        "Nikkei 225": "NKD=F"            # Futuro continuo Asia/USA
-    },
-    "Currencies (24/5)": {
-        "EUR/USD": "EURUSD=X", 
-        "GBP/USD": "GBPUSD=X", 
-        "USD/JPY": "JPY=X", 
-        "AUD/USD": "AUDUSD=X"
-    },
-    "Commodities (24/5)": {
-        "Oro": "GC=F", 
-        "Plata": "SI=F", 
-        "Petróleo WTI": "CL=F", 
-        "Cobre": "HG=F"
-    },
-    "Crypto (24/7)": {
-        "Bitcoin": "BTC-USD", 
-        "Ethereum": "ETH-USD", 
-        "Solana": "SOL-USD"
-    }
+    "Índices (24/5 Continuos)": {"Nasdaq 100 E-Mini": "NQ=F", "S&P 500 E-Mini": "ES=F", "Dow Jones Mini": "YM=F", "DAX 40 (GER)": "FDAX.EX", "Nikkei 225": "NKD=F"},
+    "Currencies (24/5)": {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "JPY=X", "AUD/USD": "AUDUSD=X"},
+    "Commodities (24/5)": {"Oro": "GC=F", "Plata": "SI=F", "Petróleo WTI": "CL=F", "Cobre": "HG=F"},
+    "Crypto (24/7)": {"Bitcoin": "BTC-USD", "Ethereum": "ETH-USD", "Solana": "SOL-USD"}
 }
 
 st.sidebar.title("📑 Master Sniper v11.7")
@@ -118,21 +100,35 @@ data = get_final_data(assets[cat][nombre], temp)
 
 if data is not None:
     row = data.iloc[-1]
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🎯 Sniper Ejecución", "🕵️ Diagnóstico", "🧬 Historial Flujo", "🔗 Absorción Pro", "🏰 Camarilla", "🧮 RISK MGR"
-])
+    # Añadida Tab 7 para el Historial Temporal
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "🎯 Sniper Ejecución", "🕵️ Diagnóstico", "🧬 Historial Flujo", "🔗 Absorción Pro", "🏰 Camarilla", "🧮 RISK MGR", "📅 Historial Temporal"
+    ])
 
     with tab1:
-        st.subheader(f"Centro de Operaciones - {nombre} (05:00 - 06:00 AM)")
+        st.subheader(f"Centro de Operaciones - {nombre}")
         c1, c2, c3 = st.columns(3)
         c1.metric("Z-Diff", f"{row['Z_Diff']:.2f}")
         c2.metric("Skewness", f"{row['Skew']:.2f}")
         c3.metric("R2 Calidad", f"{row['R2']:.3f}")
         
         if abs(row['Z_Diff']) > 1.0 and row['R2'] > 0.05:
+            ahora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             prob = min(50.0 + abs(row['Z_Diff'])*12 + row['R2']*45, 98.4)
             color = "#00ff00" if row['Z_Diff'] < -1.0 else "#ff4b4b"
             direc = "LONG (COMPRA)" if row['Z_Diff'] < -1.0 else "SHORT (VENTA)"
-            st.markdown(f"""<div class="signal-card" style="border-color: {color};"><h2 style="color: {color};">🔥 SEÑAL ACTIVA: {direc}</h2><div style="display: flex; justify-content: space-between;"><div><p>Precio Entrada: <b>{row['Close']:.4f}</b></p></div><div style="text-align: right;"><p>Probabilidad</p><h1 style="color: {color};">{prob:.1f}%</h1></div></div></div>""", unsafe_allow_html=True)
+            
+            # Guardar en historial si es nueva detección
+            nueva_alerta = {"Fecha/Hora": ahora, "Activo": nombre, "Dirección": direc, "Precio": f"{row['Close']:.4f}", "Probabilidad": f"{prob:.1f}%"}
+            if not st.session_state.alert_history or st.session_state.alert_history[0]['Fecha/Hora'] != ahora:
+                st.session_state.alert_history.insert(0, nueva_alerta)
+
+            st.markdown(f"""<div class="signal-card" style="border-color: {color};">
+                <h2 style="color: {color};">🔥 SEÑAL ACTIVA: {direc}</h2>
+                <div style="display: flex; justify-content: space-between;">
+                    <div><p>Detectada: <b>{ahora}</b></p><p>Precio Entrada: <b>{row['Close']:.4f}</b></p></div>
+                    <div style="text-align: right;"><p>Probabilidad</p><h1 style="color: {color};">{prob:.1f}%</h1></div>
+                </div></div>""", unsafe_allow_html=True)
         else: st.info("📉 Esperando confluencia (Z-Diff > 1.0 & R2 > 0.05)")
         st.plotly_chart(go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'])]).update_layout(height=400, template="plotly_dark", xaxis_rangeslider_visible=False), use_container_width=True)
 
@@ -169,60 +165,33 @@ if data is not None:
         for n, c in [('H4', 'red'), ('H3', 'orange'), ('L3', 'lightgreen'), ('L4', 'green')]:
             fig_cam.add_hline(y=row[n], line_dash="dash", line_color=c, annotation_text=n)
         st.plotly_chart(fig_cam.update_layout(height=500, template="plotly_dark", xaxis_rangeslider_visible=False), use_container_width=True)
+
+    with tab6:
+        st.subheader("🧮 Risk Manager (RoboForex ECN Edition)")
+        c_1, c_2 = st.columns(2)
+        with c_1:
+            balance = st.number_input("Balance de la Cuenta (USD)", value=1000.0, step=100.0)
+            riesgo_pct = st.slider("Riesgo por Operación (%)", 0.1, 5.0, 1.0, 0.1)
+            stop_loss_pips = st.number_input("Stop Loss en Pips / Puntos", value=10.0, step=1.0)
+        with c_2:
+            activo_rf = st.selectbox("Activo a Operar:", ["Forex (Majors/Minors)", "Oro (XAUUSD)", "Petróleo (WTI/Brent)", "Crypto (BTC/ETH)", "Indices (US30/DE40)"])
+            pip_value = 10.0 if activo_rf == "Forex (Majors/Minors)" else 1.0
+        riesgo_usd = balance * (riesgo_pct / 100)
+        lotes_final = max(0.01, round(riesgo_usd / (stop_loss_pips * pip_value), 2)) if stop_loss_pips > 0 else 0.0
+        st.markdown("---")
+        res1, res2, res3 = st.columns(3)
+        res1.metric("Pérdida Máxima", f"${riesgo_usd:.2f}")
+        res2.metric("Lotaje Sugerido", f"{lotes_final}")
+        res3.write(f"*Consejo ECN:* Usar {lotes_final} lotes.")
+
+    with tab7:
+        st.subheader("📅 Historial de Detección en Sesión")
+        if st.session_state.alert_history:
+            st.table(pd.DataFrame(st.session_state.alert_history))
+            if st.button("Limpiar Historial"):
+                st.session_state.alert_history = []
+                st.rerun()
+        else: st.info("Esperando detecciones...")
+
 else:
     st.error("Error al conectar con la API.")
-
-with tab6:
-    st.subheader("🧮 Risk Manager (RoboForex ECN Edition)")
-    
-    c_1, c_2 = st.columns(2)
-    
-    with c_1:
-        balance = st.number_input("Balance de la Cuenta (USD)", value=1000.0, step=100.0)
-        riesgo_pct = st.slider("Riesgo por Operación (%)", 0.1, 5.0, 1.0, 0.1)
-        stop_loss_pips = st.number_input("Stop Loss en Pips / Puntos", value=10.0, step=1.0)
-        
-    with c_2:
-        # Menú dinámico según los activos de RoboForex
-        activo_rf = st.selectbox("Activo a Operar:", [
-            "Forex (Majors/Minors)", 
-            "Oro (XAUUSD)", 
-            "Petróleo (WTI/Brent)", 
-            "Crypto (BTC/ETH)",
-            "Indices (US30/DE40)"
-        ])
-        
-        # Lógica de Valor de Contrato de RoboForex ECN
-        if activo_rf == "Forex (Majors/Minors)":
-            pip_value = 10.0 # 1 lote = $10/pip
-        elif activo_rf == "Oro (XAUUSD)":
-            pip_value = 1.0  # En RoboForex, 1 lote de Oro suele ser 100 onzas ($1 por cada 0.01 de movimiento)
-        elif activo_rf == "Indices (US30/DE40)":
-            pip_value = 1.0  # Depende del contrato, pero suele ser $1 por punto por lote
-        else:
-            pip_value = 1.0
-
-    # CÁLCULO PROFESIONAL
-    riesgo_usd = balance * (riesgo_pct / 100)
-    
-    # Fórmula: Lote = Riesgo USD / (SL Pips * Valor del Pip)
-    if stop_loss_pips > 0:
-        lotes_final = riesgo_usd / (stop_loss_pips * pip_value)
-        # RoboForex ECN permite microlotes (0.01)
-        lotes_final = max(0.01, round(lotes_final, 2))
-    else:
-        lotes_final = 0.0
-
-    st.markdown("---")
-    res1, res2, res3 = st.columns(3)
-    
-    with res1:
-        st.metric("Pérdida Máxima", f"${riesgo_usd:.2f}")
-    with res2:
-        st.metric("Lotaje Sugerido", f"{lotes_final}")
-    with res3:
-        # Recomendación de Apalancamiento para RoboForex
-        st.write(f"*Consejo ECN:*")
-        st.caption(f"Para un SL de {stop_loss_pips} pips, usa {lotes_final} lotes para mantener el riesgo bajo control.")
-
-    st.warning("⚠️ Nota: En RoboForex ECN, recuerda sumar la comisión fija por lote al calcular tu breakeven.")
