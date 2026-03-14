@@ -8,7 +8,7 @@ import statsmodels.api as sm
 from datetime import datetime
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="Alpha Quant v11.7 - Full Restoration", layout="wide")
+st.set_page_config(page_title="Alpha Quant v11.7 - Live Sniper", layout="wide")
 
 st.markdown("""
     <style>
@@ -68,13 +68,6 @@ def get_dynamic_diagnosis(z_d, z_p, skew, r2):
     if z_d < -1.0: diag.append({"Dato": "Z-Diff (Flujo)", "Estado": "🟢 COMPRA", "Significado": "Entrada de dinero institucional"})
     elif z_d > 1.0: diag.append({"Dato": "Z-Diff (Flujo)", "Estado": "🔴 VENTA", "Significado": "Salida de dinero / Distribución"})
     else: diag.append({"Dato": "Z-Diff (Flujo)", "Estado": "⚪ Neutral", "Significado": "Sin presión clara"})
-    if abs(z_p) > 2: diag.append({"Dato": "Z-Price (Nivel)", "Estado": "⚠️ EXTREMO", "Significado": "Precio sobreextendido. Reversión probable."})
-    else: diag.append({"Dato": "Z-Price (Nivel)", "Estado": "⚓ Estable", "Significado": "Zona de Fair Value"})
-    if skew > 0.2: diag.append({"Dato": "Skewness", "Estado": "🚀 Alcista", "Significado": "Sesgo de rebote rápido"})
-    elif skew < -0.2: diag.append({"Dato": "Skewness", "Estado": "📉 Bajista", "Significado": "Riesgo de caídas bruscas"})
-    else: diag.append({"Dato": "Skewness", "Estado": "⚖️ Simétrico", "Significado": "Equilibrio de riesgo"})
-    if r2 > 0.15: diag.append({"Dato": "R2 (Calidad)", "Estado": "💎 ALTA", "Significado": "Movimiento institucional confirmado"})
-    else: diag.append({"Dato": "R2 (Calidad)", "Estado": "💨 RUIDO", "Significado": "Cuidado con trampas de bajo volumen"})
     return pd.DataFrame(diag)
 
 # --- LISTA DE ACTIVOS ---
@@ -93,13 +86,12 @@ data = get_final_data(assets[cat][nombre], temp)
 
 if data is not None:
     row = data.iloc[-1]
-    # Pestañas originales solicitadas
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "🎯 Sniper Ejecución", "🕵️ Diagnóstico", "🧬 Historial Flujo", "🔗 Absorción Pro", "🏰 Camarilla Marks", "🧮 RISK MGR"
     ])
 
     with tab1:
-       st.subheader(f"Centro de Operaciones - {nombre}")
+        st.subheader(f"Centro de Operaciones - {nombre}")
         c1, c2, c3 = st.columns(3)
         c1.metric("Z-Diff", f"{row['Z_Diff']:.2f}")
         c2.metric("Skewness", f"{row['Skew']:.2f}")
@@ -132,48 +124,44 @@ if data is not None:
         st.plotly_chart(go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'])]).update_layout(height=400, template="plotly_dark", xaxis_rangeslider_visible=False), use_container_width=True)
 
     with tab2:
-        st.subheader("🕵️ Centro de Diagnóstico Dinámico")
+        st.subheader("🕵️ Diagnóstico Dinámico")
         st.table(get_dynamic_diagnosis(row['Z_Diff'], row['Z_Price'], row['Skew'], row['R2']))
 
     with tab3:
-        st.markdown("<div class='gold-header'>🧬 HISTORIAL DE FLUJO INSTITUCIONAL</div>", unsafe_allow_html=True)
+        st.markdown("<div class='gold-header'>🧬 HISTORIAL DE FLUJO</div>", unsafe_allow_html=True)
         fig_f = go.Figure()
         fig_f.add_trace(go.Scatter(x=data.index, y=data['Z_Price'], name="Precio (Z)", line=dict(color='#00d4ff')))
         fig_f.add_trace(go.Scatter(x=data.index, y=data['Z_Diff'], name="Flujo (Z)", line=dict(color='#ffd700', dash='dot')))
-        st.plotly_chart(fig_f.update_layout(template="plotly_dark", height=450), use_container_width=True)
+        st.plotly_chart(fig_f.update_layout(template="plotly_dark", height=400), use_container_width=True)
 
     with tab4:
-        st.markdown("<div class='gold-header'>🔗 MASTER DE ABSORCIÓN INSTITUCIONAL</div>", unsafe_allow_html=True)
-        col_a, col_b = st.columns([1, 2])
-        with col_a:
-            if row['Z_Eff'] > 1.5: st.success("*ALTA EFICIENCIA:* El precio fluye.")
-            elif row['Z_Eff'] < -1.5: st.warning("*ABSORCIÓN:* Volumen frenando el precio.")
-            else: st.write("Flujo normal.")
-        with col_b:
-            st.plotly_chart(px.bar(data.tail(40), y='Z_Eff', color='Z_Eff', color_continuous_scale='RdYlGn').update_layout(template="plotly_dark", height=350), use_container_width=True)
+        st.markdown("<div class='gold-header'>🔗 ABSORCIÓN PRO</div>", unsafe_allow_html=True)
+        st.plotly_chart(px.bar(data.tail(40), y='Z_Eff', color='Z_Eff', color_continuous_scale='RdYlGn').update_layout(template="plotly_dark", height=350), use_container_width=True)
 
     with tab5:
-        st.markdown("<div class='gold-header'>🏰 NIVELES CAMARILLA CON MARCAS DE SEÑAL</div>", unsafe_allow_html=True)
+        st.markdown("<div class='gold-header'>🏰 CAMARILLA (REPASO HISTÓRICO DE SEÑALES)</div>", unsafe_allow_html=True)
         df_p = data.tail(100)
         fig_c = go.Figure(data=[go.Candlestick(x=df_p.index, open=df_p['Open'], high=df_p['High'], low=df_p['Low'], close=df_p['Close'], name="Precio")])
         for n, c in [('H4', 'red'), ('H3', 'orange'), ('L3', 'lightgreen'), ('L4', 'green')]:
             fig_c.add_hline(y=row[n], line_dash="dash", line_color=c, annotation_text=n)
+        
+        # El escaneo histórico se queda aquí para que puedas ver el pasado
         for i in range(len(df_p)):
             if abs(df_p['Z_Diff'].iloc[i]) > 1.0 and df_p['R2'].iloc[i] > 0.05:
-                if df_p['Z_Diff'].iloc[i] < -1.0: # BUY
+                if df_p['Z_Diff'].iloc[i] < -1.0:
                     fig_c.add_annotation(x=df_p.index[i], y=df_p['Low'].iloc[i], text="▲", showarrow=False, font=dict(color="#00ff00", size=18), yshift=-20)
-                else: # SELL
+                else:
                     fig_c.add_annotation(x=df_p.index[i], y=df_p['High'].iloc[i], text="▼", showarrow=False, font=dict(color="#ff4b4b", size=18), yshift=20)
         st.plotly_chart(fig_c.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False), use_container_width=True)
 
     with tab6:
-        st.subheader("🧮 Risk Manager (RoboForex)")
-        balance = st.number_input("Balance (USD)", value=1000.0)
+        st.subheader("🧮 Risk Manager")
+        bal = st.number_input("Balance (USD)", value=1000.0)
         riesgo_pct = st.slider("Riesgo %", 0.1, 5.0, 1.0)
         sl_pips = st.number_input("Stop Loss Pips", value=10.0)
-        riesgo_usd = balance * (riesgo_pct / 100)
+        riesgo_usd = bal * (riesgo_pct / 100)
         st.metric("Pérdida Máxima", f"${riesgo_usd:.2f}")
         st.metric("Lotaje Sugerido", f"{round(riesgo_usd / (sl_pips * 10), 2)}")
 
 else:
-    st.error("Error al cargar datos financieros.")
+    st.error("Error al cargar datos.")
