@@ -81,32 +81,11 @@ def get_dynamic_diagnosis(z_d, z_p, skew, r2):
     else: diag.append({"Dato": "R2 (Calidad)", "Estado": "💨 RUIDO", "Significado": "Cuidado con trampas de bajo volumen"})
     return pd.DataFrame(diag)
 
-# --- LISTA DE ACTIVOS ---
 assets = {
-    "Índices (24/5 Continuos)": {
-        "Nasdaq 100 E-Mini": "NQ=F",
-        "S&P 500 E-Mini": "ES=F",
-        "Dow Jones Mini": "YM=F",
-        "DAX 40 (GER)": "FDAX.EX",
-        "Nikkei 225": "NKD=F"
-    },
-    "Currencies (24/5)": {
-        "EUR/USD": "EURUSD=X", 
-        "GBP/USD": "GBPUSD=X", 
-        "USD/JPY": "JPY=X", 
-        "AUD/USD": "AUDUSD=X"
-    },
-    "Commodities (24/5)": {
-        "Oro": "GC=F", 
-        "Plata": "SI=F", 
-        "Petróleo WTI": "CL=F", 
-        "Cobre": "HG=F"
-    },
-    "Crypto (24/7)": {
-        "Bitcoin": "BTC-USD", 
-        "Ethereum": "ETH-USD", 
-        "Solana": "SOL-USD"
-    }
+    "Índices (24/5 Continuos)": {"Nasdaq 100 E-Mini": "NQ=F", "S&P 500 E-Mini": "ES=F", "Dow Jones Mini": "YM=F", "DAX 40 (GER)": "FDAX.EX", "Nikkei 225": "NKD=F"},
+    "Currencies (24/5)": {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "JPY=X", "AUD/USD": "AUDUSD=X"},
+    "Commodities (24/5)": {"Oro": "GC=F", "Plata": "SI=F", "Petróleo WTI": "CL=F", "Cobre": "HG=F"},
+    "Crypto (24/7)": {"Bitcoin": "BTC-USD", "Ethereum": "ETH-USD", "Solana": "SOL-USD"}
 }
 
 st.sidebar.title("📑 Master Sniper v11.7")
@@ -128,117 +107,14 @@ if data is not None:
         c2.metric("Skewness", f"{row['Skew']:.2f}")
         c3.metric("R2 Calidad", f"{row['R2']:.3f}")
         
-        # Escaneo retrospectivo para la señal más reciente
         last_signal = None
         for i in range(len(data)-1, len(data)-50, -1):
             if i < 0: break
             if abs(data['Z_Diff'].iloc[i]) > 1.0 and data['R2'].iloc[i] > 0.05:
-                delta = datetime.now(data.index[i].tzinfo) - data.index[i]
+                # Normalizar zona horaria para el cálculo
+                dt_now = datetime.now(data.index[i].tzinfo)
+                delta = dt_now - data.index[i]
                 last_signal = {
                     "tipo": "LONG (COMPRA)" if data['Z_Diff'].iloc[i] < -1.0 else "SHORT (VENTA)",
                     "precio": data['Close'].iloc[i],
-                    "hace": int(delta.total_seconds() / 3600),
-                    "hora": data.index[i].strftime("%H:%M"),
-                    "z": data['Z_Diff'].iloc[i],
-                    "r2": data['R2'].iloc[i]
-                }
-                break
-
-        if last_signal:
-            color = "#00ff00" if "LONG" in last_signal['tipo'] else "#ff4b4b"
-            tiempo_txt = f"hace {last_signal['Hace']} horas" if last_signal['hace'] > 0 else "¡AHORA MISMO!"
-            prob = min(50.0 + abs(last_signal['z'])*12 + last_signal['r2']*45, 98.4)
-            
-            st.markdown(f"""
-                <div class="signal-card" style="border-color: {color};">
-                    <h2 style="color: {color};">🔥 ÚLTIMA SEÑAL: {last_signal['tipo']}</h2>
-                    <div style="display: flex; justify-content: space-between;">
-                        <div>
-                            <p>Activada: <b>{tiempo_txt}</b> (a las {last_signal['hora']})</p>
-                            <p>Precio Entrada: <b>{last_signal['precio']:.4f}</b></p>
-                        </div>
-                        <div style="text-align: right;">
-                            <p>Probabilidad</p>
-                            <h1 style="color: {color};">{prob:.1f}%</h1>
-                        </div>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.info("📉 Esperando confluencia (Z-Diff > 1.0 & R2 > 0.05)")
-            
-        st.plotly_chart(go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'])]).update_layout(height=400, template="plotly_dark", xaxis_rangeslider_visible=False), use_container_width=True)
-
-    with tab2:
-        st.subheader("Centro de Diagnóstico Dinámico")
-        st.table(get_dynamic_diagnosis(row['Z_Diff'], row['Z_Price'], row['Skew'], row['R2']))
-
-    with tab3:
-        st.markdown("<div class='gold-header'>🧬 HISTORIAL DE FLUJO INSTITUCIONAL</div>", unsafe_allow_html=True)
-        fig_f = go.Figure()
-        fig_f.add_trace(go.Scatter(x=data.index, y=data['Z_Price'], name="Precio (Z)", line=dict(color='#00d4ff')))
-        fig_f.add_trace(go.Scatter(x=data.index, y=data['Z_Diff'], name="Flujo (Z)", line=dict(color='#ffd700', dash='dot')))
-        st.plotly_chart(fig_f.update_layout(template="plotly_dark", height=450), use_container_width=True)
-
-    with tab4:
-        st.markdown("<div class='gold-header'>🔗 MASTER DE ABSORCIÓN INSTITUCIONAL</div>", unsafe_allow_html=True)
-        col_a, col_b = st.columns([1, 2])
-        with col_a:
-            st.markdown("### 💡 Interpretación")
-            if row['Z_Eff'] > 1.5: st.success("*ALTA EFICIENCIA:* El precio fluye con el volumen.")
-            elif row['Z_Eff'] < -1.5: st.warning("*ABSORCIÓN:* Volumen alto frenando el precio.")
-            else: st.write("Flujo estándar.")
-        with col_b:
-            st.plotly_chart(px.bar(data.tail(40), y='Z_Eff', color='Z_Eff', color_continuous_scale='RdYlGn').update_layout(template="plotly_dark", height=350), use_container_width=True)
-
-    with tab5:
-        st.markdown("<div class='gold-header'>🏰 NIVELES CAMARILLA Y MARCAS DE ACTIVACIÓN</div>", unsafe_allow_html=True)
-        cl1, cl2, cl3, cl4 = st.columns(4)
-        cl1.metric("H4 (Breakout)", f"{row['H4']:.4f}")
-        cl2.metric("H3 (Reversión)", f"{row['H3']:.4f}")
-        cl3.metric("L3 (Reversión)", f"{row['L3']:.4f}")
-        cl4.metric("L4 (Breakout)", f"{row['L4']:.4f}")
-        
-        df_plot = data.tail(100)
-        fig_cam = go.Figure(data=[go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name="Precio")])
-        
-        # Líneas Camarilla
-        for n, c in [('H4', 'red'), ('H3', 'orange'), ('L3', 'lightgreen'), ('L4', 'green')]:
-            fig_cam.add_hline(y=row[n], line_dash="dash", line_color=c, annotation_text=n)
-            
-        # Marcas de señales históricas (Escaneo)
-        for i in range(len(df_plot)):
-            z_val = df_plot['Z_Diff'].iloc[i]
-            r2_val = df_plot['R2'].iloc[i]
-            if abs(z_val) > 1.0 and r2_val > 0.05:
-                if z_val < -1.0: # LONG
-                    fig_cam.add_annotation(x=df_plot.index[i], y=df_plot['Low'].iloc[i], text="▲", showarrow=False, font=dict(color="#00ff00", size=18), yshift=-20)
-                else: # SHORT
-                    fig_cam.add_annotation(x=df_plot.index[i], y=df_plot['High'].iloc[i], text="▼", showarrow=False, font=dict(color="#ff4b4b", size=18), yshift=20)
-        
-        st.plotly_chart(fig_cam.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False), use_container_width=True)
-
-    with tab6:
-        st.subheader("🧮 Risk Manager (RoboForex ECN Edition)")
-        c_1, c_2 = st.columns(2)
-        with c_1:
-            balance = st.number_input("Balance de la Cuenta (USD)", value=1000.0, step=100.0)
-            riesgo_pct = st.slider("Riesgo por Operación (%)", 0.1, 5.0, 1.0, 0.1)
-            stop_loss_pips = st.number_input("Stop Loss en Pips / Puntos", value=10.0, step=1.0)
-        with c_2:
-            activo_rf = st.selectbox("Activo a Operar:", ["Forex (Majors/Minors)", "Oro (XAUUSD)", "Petróleo (WTI/Brent)", "Crypto (BTC/ETH)", "Indices (US30/DE40)"])
-            if activo_rf == "Forex (Majors/Minors)": pip_value = 10.0
-            elif activo_rf == "Oro (XAUUSD)": pip_value = 1.0
-            else: pip_value = 1.0
-
-        riesgo_usd = balance * (riesgo_pct / 100)
-        lotes_final = max(0.01, round(riesgo_usd / (stop_loss_pips * pip_value), 2)) if stop_loss_pips > 0 else 0.0
-        
-        st.markdown("---")
-        res1, res2, res3 = st.columns(3)
-        res1.metric("Pérdida Máxima", f"${riesgo_usd:.2f}")
-        res2.metric("Lotaje Sugerido", f"{lotes_final}")
-        res3.write(f"*Consejo ECN:* Sumar comisión fija por lote.")
-
-else:
-    st.error("Error al conectar con la API.")
+                    "
