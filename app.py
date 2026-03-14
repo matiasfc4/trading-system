@@ -99,33 +99,36 @@ if data is not None:
     ])
 
     with tab1:
-        st.subheader(f"Centro de Operaciones - {nombre}")
+       st.subheader(f"Centro de Operaciones - {nombre}")
         c1, c2, c3 = st.columns(3)
         c1.metric("Z-Diff", f"{row['Z_Diff']:.2f}")
         c2.metric("Skewness", f"{row['Skew']:.2f}")
         c3.metric("R2 Calidad", f"{row['R2']:.3f}")
         
-        # Lógica de escaneo temporal para la tarjeta principal
-        last_sig = None
-        for i in range(len(data)-1, len(data)-50, -1):
-            if abs(data['Z_Diff'].iloc[i]) > 1.0 and data['R2'].iloc[i] > 0.05:
-                delta = datetime.now(data.index[i].tzinfo) - data.index[i]
-                last_sig = {
-                    "tipo": "LONG (COMPRA)" if data['Z_Diff'].iloc[i] < -1.0 else "SHORT (VENTA)",
-                    "precio": data['Close'].iloc[i],
-                    "hace": int(delta.total_seconds() / 3600),
-                    "hora": data.index[i].strftime("%H:%M"),
-                    "z": data['Z_Diff'].iloc[i], "r2": data['R2'].iloc[i]
-                }
-                break
-
-        if last_sig:
-            color = "#00ff00" if "LONG" in last_sig['tipo'] else "#ff4b4b"
-            txt_tiempo = f"hace {last_sig['hace']} horas" if last_sig['hace'] > 0 else "¡AHORA MISMO!"
-            prob = min(50.0 + abs(last_sig['z'])*12 + last_sig['r2']*45, 98.4)
-            st.markdown(f"""<div class="signal-card" style="border-color: {color};"><h2 style="color: {color};">🔥 ÚLTIMA SEÑAL: {last_sig['tipo']}</h2><div style="display: flex; justify-content: space-between;"><div><p>Activada: <b>{txt_tiempo}</b> ({last_sig['hora']})</p><p>Precio Entrada: <b>{last_sig['precio']:.4f}</b></p></div><div style="text-align: right;"><p>Probabilidad</p><h1 style="color: {color};">{prob:.1f}%</h1></div></div></div>""", unsafe_allow_html=True)
+        # MODIFICACIÓN: Solo mostramos la tarjeta si la señal es REAL-TIME (vela actual)
+        if abs(row['Z_Diff']) > 1.0 and row['R2'] > 0.05:
+            color = "#00ff00" if row['Z_Diff'] < -1.0 else "#ff4b4b"
+            direc = "LONG (COMPRA)" if row['Z_Diff'] < -1.0 else "SHORT (VENTA)"
+            prob = min(50.0 + abs(row['Z_Diff'])*12 + row['R2']*45, 98.4)
+            
+            st.markdown(f"""
+                <div class="signal-card" style="border-color: {color};">
+                    <h2 style="color: {color};">🔥 SEÑAL ACTIVA AHORA: {direc}</h2>
+                    <div style="display: flex; justify-content: space-between;">
+                        <div>
+                            <p>Precio Actual: <b>{row['Close']:.4f}</b></p>
+                            <p>Estado: <b>Ejecución Inmediata</b></p>
+                        </div>
+                        <div style="text-align: right;">
+                            <p>Probabilidad</p>
+                            <h1 style="color: {color};">{prob:.1f}%</h1>
+                        </div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
         else:
-            st.info("📉 Esperando confluencia institucional...")
+            st.info("📉 Sin señal institucional en la vela actual. Esperando confluencia...")
+            
         st.plotly_chart(go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'])]).update_layout(height=400, template="plotly_dark", xaxis_rangeslider_visible=False), use_container_width=True)
 
     with tab2:
