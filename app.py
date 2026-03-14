@@ -8,14 +8,13 @@ import statsmodels.api as sm
 from datetime import datetime
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="Alpha Quant v11.7 - Full Restoration", layout="wide")
+st.set_page_config(page_title="Alpha Quant v11.7 - Fixed", layout="wide")
 
 st.markdown("""
     <style>
     .stMetric { background-color: #0d1117; border: 1px solid #30363d; padding: 15px; border-radius: 10px; }
     .diag-box { background-color: #161b22; border-left: 5px solid #ffd700; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
     .gold-header { color: #ffd700; font-weight: bold; border-bottom: 1px solid #ffd700; padding-bottom: 5px; margin-bottom: 15px; }
-    .camarilla-box { background-color: #0a0e14; border: 1px solid #444; padding: 10px; border-radius: 5px; text-align: center; }
     .signal-card { background: linear-gradient(135deg, #1e2530 0%, #0d1117 100%); border: 2px solid #30363d; padding: 25px; border-radius: 15px; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
@@ -24,7 +23,6 @@ st.markdown("""
 def get_final_data(ticker_id, t):
     p_map = {"1h": "30d", "4h": "60d", "1d": "120d"}
     df = yf.download(ticker_id, period=p_map[t], interval=t, progress=False)
-    
     if df.empty: return None
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     
@@ -33,14 +31,10 @@ def get_final_data(ticker_id, t):
     df['SMA'] = df['Close'].rolling(W).mean()
     df['Std'] = df['Close'].rolling(W).std()
     df['Z_Price'] = (df['Close'] - df['SMA']) / (df['Std'] + 1e-10)
-    
-    # JDetector (Flujo Institucional)
     df['Vol_Proxy'] = (df['High'] - df['Low']) * 100000
     df['RMF'] = df['Close'] * df['Vol_Proxy']
     diff_val = df['Ret'].rolling(W).sum() - df['RMF'].pct_change().rolling(W).sum()
     df['Z_Diff'] = (diff_val - diff_val.rolling(W).mean()) / (diff_val.rolling(W).std() + 1e-10)
-    
-    # Estructura y Absorción
     df['Skew'] = df['Ret'].rolling(30).skew()
     df['Spread'] = (df['High'] - df['Low'])
     df['V_Eff'] = df['Spread'] / (df['Volume'].rolling(5).mean() + 1e-10)
@@ -54,38 +48,19 @@ def get_final_data(ticker_id, t):
         except: r2_s.append(0)
     df['R2'] = r2_s
 
-    # Camarilla
     daily = yf.download(ticker_id, period="5d", interval="1d", progress=False)
     if isinstance(daily.columns, pd.MultiIndex): daily.columns = daily.columns.get_level_values(0)
     H, L, C = daily['High'].iloc[-2], daily['Low'].iloc[-2], daily['Close'].iloc[-2]
     r_val = H - L
     df['H4'], df['H3'] = C + r_val * (1.1/2), C + r_val * (1.1/4)
     df['L3'], df['L4'] = C - r_val * (1.1/4), C - r_val * (1.1/2)
-    
     return df
 
-def get_dynamic_diagnosis(z_d, z_p, skew, r2):
-    diag = []
-    if z_d < -1.0: diag.append({"Dato": "Z-Diff (Flujo)", "Estado": "🟢 COMPRA", "Significado": "Entrada de dinero institucional"})
-    elif z_d > 1.0: diag.append({"Dato": "Z-Diff (Flujo)", "Estado": "🔴 VENTA", "Significado": "Salida de dinero / Distribución"})
-    else: diag.append({"Dato": "Z-Diff (Flujo)", "Estado": "⚪ Neutral", "Significado": "Sin presión clara"})
-    
-    if abs(z_p) > 2: diag.append({"Dato": "Z-Price (Nivel)", "Estado": "⚠️ EXTREMO", "Significado": "Precio sobreextendido. Reversión probable."})
-    else: diag.append({"Dato": "Z-Price (Nivel)", "Estado": "⚓ Estable", "Significado": "Zona de Fair Value"})
-    
-    if skew > 0.2: diag.append({"Dato": "Skewness", "Estado": "🚀 Alcista", "Significado": "Sesgo de rebote rápido"})
-    elif skew < -0.2: diag.append({"Dato": "Skewness", "Estado": "📉 Bajista", "Significado": "Riesgo de caídas bruscas"})
-    else: diag.append({"Dato": "Skewness", "Estado": "⚖️ Simétrico", "Significado": "Equilibrio de riesgo"})
-    
-    if r2 > 0.15: diag.append({"Dato": "R2 (Calidad)", "Estado": "💎 ALTA", "Significado": "Movimiento institucional confirmado"})
-    else: diag.append({"Dato": "R2 (Calidad)", "Estado": "💨 RUIDO", "Significado": "Cuidado con trampas de bajo volumen"})
-    return pd.DataFrame(diag)
-
 assets = {
-    "Índices (24/5 Continuos)": {"Nasdaq 100 E-Mini": "NQ=F", "S&P 500 E-Mini": "ES=F", "Dow Jones Mini": "YM=F", "DAX 40 (GER)": "FDAX.EX", "Nikkei 225": "NKD=F"},
-    "Currencies (24/5)": {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "JPY=X", "AUD/USD": "AUDUSD=X"},
-    "Commodities (24/5)": {"Oro": "GC=F", "Plata": "SI=F", "Petróleo WTI": "CL=F", "Cobre": "HG=F"},
-    "Crypto (24/7)": {"Bitcoin": "BTC-USD", "Ethereum": "ETH-USD", "Solana": "SOL-USD"}
+    "Índices": {"Nasdaq 100": "NQ=F", "S&P 500": "ES=F", "DAX 40": "FDAX.EX"},
+    "Currencies": {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "JPY=X"},
+    "Commodities": {"Oro": "GC=F", "Petróleo": "CL=F"},
+    "Crypto": {"Bitcoin": "BTC-USD", "Ethereum": "ETH-USD"}
 }
 
 st.sidebar.title("📑 Master Sniper v11.7")
@@ -96,9 +71,7 @@ data = get_final_data(assets[cat][nombre], temp)
 
 if data is not None:
     row = data.iloc[-1]
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "🎯 Sniper Ejecución", "🕵️ Diagnóstico", "🧬 Historial Flujo", "🔗 Absorción Pro", "🏰 Camarilla Marks", "🧮 RISK MGR"
-    ])
+    tab1, tab2, tab3 = st.tabs(["🎯 Sniper Ejecución", "🏰 Camarilla Marks", "🧮 RISK MGR"])
 
     with tab1:
         st.subheader(f"Centro de Operaciones - {nombre}")
@@ -111,10 +84,65 @@ if data is not None:
         for i in range(len(data)-1, len(data)-50, -1):
             if i < 0: break
             if abs(data['Z_Diff'].iloc[i]) > 1.0 and data['R2'].iloc[i] > 0.05:
-                # Normalizar zona horaria para el cálculo
                 dt_now = datetime.now(data.index[i].tzinfo)
                 delta = dt_now - data.index[i]
                 last_signal = {
                     "tipo": "LONG (COMPRA)" if data['Z_Diff'].iloc[i] < -1.0 else "SHORT (VENTA)",
                     "precio": data['Close'].iloc[i],
-                    "
+                    "hace": int(delta.total_seconds() / 3600),
+                    "hora": data.index[i].strftime("%H:%M"),
+                    "z": data['Z_Diff'].iloc[i],
+                    "r2": data['R2'].iloc[i]
+                }
+                break
+
+        if last_signal:
+            color = "#00ff00" if "LONG" in last_signal['tipo'] else "#ff4b4b"
+            tiempo_txt = f"hace {last_signal['hace']} horas" if last_signal['hace'] > 0 else "¡AHORA MISMO!"
+            prob = min(50.0 + abs(last_signal['z'])*12 + last_signal['r2']*45, 98.4)
+            
+            # Formato HTML en una sola línea o usando f-string limpio
+            html_card = f"""
+            <div class="signal-card" style="border-color: {color};">
+                <h2 style="color: {color};">🔥 ÚLTIMA SEÑAL: {last_signal['tipo']}</h2>
+                <div style="display: flex; justify-content: space-between;">
+                    <div>
+                        <p>Activada: <b>{tiempo_txt}</b> ({last_signal['hora']})</p>
+                        <p>Precio Entrada: <b>{last_signal['precio']:.4f}</b></p>
+                    </div>
+                    <div style="text-align: right;">
+                        <p>Probabilidad</p><h1 style="color: {color};">{prob:.1f}%</h1>
+                    </div>
+                </div>
+            </div>
+            """
+            st.markdown(html_card, unsafe_allow_html=True)
+        else:
+            st.info("Esperando confluencia institucional...")
+            
+        st.plotly_chart(go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'])]).update_layout(height=400, template="plotly_dark", xaxis_rangeslider_visible=False), use_container_width=True)
+
+    with tab2:
+        st.markdown("<div class='gold-header'>🏰 NIVELES CAMARILLA Y MARCAS DE ACTIVACIÓN</div>", unsafe_allow_html=True)
+        df_plot = data.tail(100)
+        fig_cam = go.Figure(data=[go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name="Precio")])
+        for n, c in [('H4', 'red'), ('H3', 'orange'), ('L3', 'lightgreen'), ('L4', 'green')]:
+            fig_cam.add_hline(y=row[n], line_dash="dash", line_color=c, annotation_text=n)
+        for i in range(len(df_plot)):
+            z_val = df_plot['Z_Diff'].iloc[i]
+            r2_val = df_plot['R2'].iloc[i]
+            if abs(z_val) > 1.0 and r2_val > 0.05:
+                if z_val < -1.0:
+                    fig_cam.add_annotation(x=df_plot.index[i], y=df_plot['Low'].iloc[i], text="▲", showarrow=False, font=dict(color="#00ff00", size=18), yshift=-20)
+                else:
+                    fig_cam.add_annotation(x=df_plot.index[i], y=df_plot['High'].iloc[i], text="▼", showarrow=False, font=dict(color="#ff4b4b", size=18), yshift=20)
+        st.plotly_chart(fig_cam.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False), use_container_width=True)
+
+    with tab3:
+        st.subheader("🧮 Risk Manager")
+        bal = st.number_input("Balance (USD)", value=1000.0)
+        riesgo = st.slider("Riesgo %", 0.1, 5.0, 1.0)
+        st.metric("Riesgo en USD", f"${bal * (riesgo/100):.2f}")
+
+else:
+    st.error("No se pudieron obtener datos de Yahoo Finance.")
